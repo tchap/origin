@@ -18,17 +18,10 @@ const (
 	clusterProfileHypershift    clusterProfile = "Hypershift"
 )
 
-const (
-	sourceOpenShiftCRD       = "openshift-crd"
-	sourceOpenShiftAPIServer = "openshift-apiserver"
-	sourceOAuthAPIServer     = "oauth-apiserver"
-)
-
 type servedAPIEntry struct {
 	Group    string
 	Version  string
 	Resource string
-	Source   string
 }
 
 // forProfile is a stub for servedapis.ForProfile in openshift/api.
@@ -90,7 +83,7 @@ func openshiftAggregatedAPIs(profile clusterProfile) []servedAPIEntry {
 	}
 	result := make([]servedAPIEntry, 0, len(osaResources))
 	for _, r := range osaResources {
-		result = append(result, servedAPIEntry{Group: r.group, Version: "v1", Resource: r.resource, Source: sourceOpenShiftAPIServer})
+		result = append(result, servedAPIEntry{Group: r.group, Version: "v1", Resource: r.resource, })
 	}
 
 	// oauth-apiserver resources (2 groups, all v1).
@@ -110,7 +103,7 @@ func openshiftAggregatedAPIs(profile clusterProfile) []servedAPIEntry {
 			{"user.openshift.io", "users"},
 		}
 		for _, r := range oauthResources {
-			result = append(result, servedAPIEntry{Group: r.group, Version: "v1", Resource: r.resource, Source: sourceOAuthAPIServer})
+			result = append(result, servedAPIEntry{Group: r.group, Version: "v1", Resource: r.resource, })
 		}
 	}
 	return result
@@ -220,7 +213,7 @@ func openshiftCRDs(profile clusterProfile) []servedAPIEntry {
 
 	result := make([]servedAPIEntry, 0, len(crds))
 	for _, c := range crds {
-		result = append(result, servedAPIEntry{Group: c.group, Version: c.version, Resource: c.resource, Source: sourceOpenShiftCRD})
+		result = append(result, servedAPIEntry{Group: c.group, Version: c.version, Resource: c.resource, })
 	}
 
 	// Machine API is required on SelfManagedHA clusters but absent on HyperShift
@@ -231,7 +224,7 @@ func openshiftCRDs(profile clusterProfile) []servedAPIEntry {
 			{"v1beta1", "machines"},
 			{"v1beta1", "machinesets"},
 		} {
-			result = append(result, servedAPIEntry{Group: "machine.openshift.io", Version: r.version, Resource: r.resource, Source: sourceOpenShiftCRD})
+			result = append(result, servedAPIEntry{Group: "machine.openshift.io", Version: r.version, Resource: r.resource, })
 		}
 	}
 
@@ -345,7 +338,7 @@ func openshiftOptionalAPIs() []servedAPIEntry {
 	}
 	result := make([]servedAPIEntry, 0, len(optional))
 	for _, r := range optional {
-		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, Source: sourceOpenShiftCRD})
+		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, })
 	}
 	return result
 }

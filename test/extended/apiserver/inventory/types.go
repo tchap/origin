@@ -14,6 +14,4 @@ type ServedAPIEntry struct {
 	Version  string
 	Resource string
 	Kind     string
-	Scope    string // "Namespaced" or "Cluster"
-	Source   string // informational: "core-kube", "openshift-crd", "openshift-apiserver", etc.
 }

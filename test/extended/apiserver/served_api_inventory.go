@@ -132,7 +132,6 @@ func convertToStubFormat(entries []inventory.ServedAPIEntry) []servedAPIEntry {
 			Group:    e.Group,
 			Version:  e.Version,
 			Resource: e.Resource,
-			Source:   e.Source,
 		})
 	}
 	return result

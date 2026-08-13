@@ -55,7 +55,7 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 		// Get the Kubernetes version the cluster is actually running.
 		serverVersion, err := oc.AdminKubeClient().Discovery().ServerVersion()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		// ParseGeneric handles the "v" prefix and build metadata suffix (e.g. "+b9a44ad").
+
 		kubeVersion, err := utilversion.ParseGeneric(serverVersion.GitVersion)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -64,7 +64,7 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 
 		// 2. Build the expected API set.
 		// Get OpenShift APIs from stub (will be from vendored openshift/api later)
-		osRequired, osOptional, osFound := forProfileAndVersion(profile, kubeVersion)
+		osRequired, osOptional, osFound := forProfile(profile)
 		if !osFound {
 			e2eskipper.Skipf("OpenShift API inventory for profile=%s not found.", profile)
 		}
@@ -132,7 +132,7 @@ func convertToStubFormat(entries []inventory.ServedAPIEntry) []servedAPIEntry {
 			Group:    e.Group,
 			Version:  e.Version,
 			Resource: e.Resource,
-			Source:   source(e.Source),
+			Source:   e.Source,
 		})
 	}
 	return result

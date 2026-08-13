@@ -11,10 +11,6 @@ package apiserver
 //   2. Add:  import "github.com/openshift/api/servedapis"
 //   3. Replace stub types with vendored types in served_api_inventory.go
 
-import (
-	utilversion "k8s.io/apimachinery/pkg/util/version"
-)
-
 type clusterProfile string
 
 const (
@@ -22,27 +18,24 @@ const (
 	clusterProfileHypershift    clusterProfile = "Hypershift"
 )
 
-type source string
-
 const (
-	sourceCoreKube           source = "core-kube"
-	sourceOpenShiftCRD       source = "openshift-crd"
-	sourceOpenShiftAPIServer source = "openshift-apiserver"
-	sourceOAuthAPIServer     source = "oauth-apiserver"
+	sourceOpenShiftCRD       = "openshift-crd"
+	sourceOpenShiftAPIServer = "openshift-apiserver"
+	sourceOAuthAPIServer     = "oauth-apiserver"
 )
 
 type servedAPIEntry struct {
 	Group    string
 	Version  string
 	Resource string
-	Source   source
+	Source   string
 }
 
-// forProfileAndVersion is a stub for servedapis.ForProfileAndVersion in openshift/api.
+// forProfile is a stub for servedapis.ForProfile in openshift/api.
 // Returns required and optional OpenShift API entries for the Default feature set.
 // Kubernetes APIs are returned separately from inventory.ForKubeVersion().
 // Returns found=false when data is unavailable (unsupported profile).
-func forProfileAndVersion(profile clusterProfile, kubeVersion *utilversion.Version) (required, optional []servedAPIEntry, found bool) {
+func forProfile(profile clusterProfile) (required, optional []servedAPIEntry, found bool) {
 	if profile != clusterProfileSelfManagedHA {
 		// Hypershift stub data is not yet generated; the test will skip.
 		return nil, nil, false

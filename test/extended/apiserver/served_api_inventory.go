@@ -121,10 +121,11 @@ func discoveredResources(oc *exutil.CLI) (sets.Set[schema.GroupVersionResource],
 	var resourceLists []*metav1.APIResourceList
 
 	// Retry on partial discovery failures (aggregated API servers restarting, etc.)
+	// Worst case: 2s + 4s + 8s + (27 * 10s) ≈ 284s (~5 minutes).
 	err := retry.OnError(
 		wait.Backoff{
 			Duration: 2 * time.Second,
-			Steps:    5,
+			Steps:    30,
 			Factor:   2.0,
 			Jitter:   0.1,
 			Cap:      10 * time.Second,

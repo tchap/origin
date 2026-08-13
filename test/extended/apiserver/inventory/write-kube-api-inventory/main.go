@@ -32,7 +32,6 @@ func run(cmd *cobra.Command, args []string) error {
 	verify, _ := cmd.Flags().GetBool("verify")
 
 	// Get the current Kubernetes version from component-base
-	// DefaultKubeBinaryVersion is like "1.36"
 	kubeVersion, err := utilversion.ParseGeneric(componentbaseversion.DefaultKubeBinaryVersion)
 	if err != nil {
 		return fmt.Errorf("failed to parse Kubernetes version %q: %w", componentbaseversion.DefaultKubeBinaryVersion, err)

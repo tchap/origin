@@ -2,6 +2,10 @@
 
 package inventory
 
+func init() {
+	RegisterKubernetesAPIs("1.36", kubeAPIs136)
+}
+
 var kubeAPIs136 = []ServedAPIEntry{
 	{Group: "", Version: "v1", Resource: "bindings", Kind: "Binding", Scope: "Namespaced", Source: "core-kube"},
 	{Group: "", Version: "v1", Resource: "componentstatuses", Kind: "ComponentStatus", Scope: "Namespaced", Source: "core-kube"},
@@ -71,8 +75,4 @@ var kubeAPIs136 = []ServedAPIEntry{
 	{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses", Kind: "StorageClass", Scope: "Namespaced", Source: "core-kube"},
 	{Group: "storage.k8s.io", Version: "v1", Resource: "volumeattachments", Kind: "VolumeAttachment", Scope: "Namespaced", Source: "core-kube"},
 	{Group: "storage.k8s.io", Version: "v1", Resource: "volumeattributesclasses", Kind: "VolumeAttributesClass", Scope: "Namespaced", Source: "core-kube"},
-}
-
-func init() {
-	RegisterKubernetesAPIs(36, kubeAPIs136)
 }

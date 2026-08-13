@@ -1,23 +1,25 @@
 package inventory
 
 import (
+	"fmt"
 	"sync"
 
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 )
 
 var (
-	// registry holds all registered Kubernetes API inventories by version
-	registry = make(map[uint][]ServedAPIEntry)
-	mu       sync.RWMutex
+	// registry holds all registered Kubernetes API inventories by version string (e.g., "1.36")
+	registry     = make(map[string][]ServedAPIEntry)
+	registryLock sync.RWMutex
 )
 
-// RegisterKubernetesAPIs registers the API inventory for a specific Kubernetes minor version.
+// RegisterKubernetesAPIs registers the API inventory for a specific Kubernetes version.
 // This is called by init() functions in generated files.
-func RegisterKubernetesAPIs(minor uint, apis []ServedAPIEntry) {
-	mu.Lock()
-	defer mu.Unlock()
-	registry[minor] = apis
+// The version string should be in the format "1.36".
+func RegisterKubernetesAPIs(version string, apis []ServedAPIEntry) {
+	registryLock.Lock()
+	defer registryLock.Unlock()
+	registry[version] = apis
 }
 
 // ForKubeVersion returns the Kubernetes API inventory for the given version.
@@ -27,9 +29,11 @@ func ForKubeVersion(v *utilversion.Version) ([]ServedAPIEntry, bool) {
 		return nil, false
 	}
 
-	mu.RLock()
-	defer mu.RUnlock()
+	key := fmt.Sprintf("%d.%d", v.Major(), v.Minor())
 
-	apis, found := registry[v.Minor()]
+	registryLock.RLock()
+	defer registryLock.RUnlock()
+
+	apis, found := registry[key]
 	return apis, found
 }

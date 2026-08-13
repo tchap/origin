@@ -2,26 +2,17 @@ package apiserver
 
 // Stubs for the openshift/api servedapis package.
 //
-// These stand in for the generated code that will live in openshift/api once Part A of
-// the plan is implemented. When that package is vendored into origin:
+// These stand in for the generated code that will live in openshift/api once that's implemented.
+// This file contains ONLY OpenShift APIs (CRDs, aggregated servers, optional operators).
+// Kubernetes APIs are now generated in test/extended/apiserver/inventory/zz_generated_kubernetes.go.
+//
+// When openshift/api servedapis package is vendored:
 //   1. Delete this file.
 //   2. Add:  import "github.com/openshift/api/servedapis"
-//   3. Replace:
-//      clusterProfile       → servedapis.ClusterProfile
-//      clusterProfileXxx    → servedapis.ClusterProfileXxx
-//      source / sourceXxx   → servedapis.Source / servedapis.SourceXxx
-//      servedAPIEntry       → servedapis.ServedAPIEntry
-//      forProfileAndVersion → servedapis.ForProfileAndVersion
+//   3. Replace stub types with vendored types in served_api_inventory.go
 
 import (
-	"strings"
-
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	utilversion "k8s.io/apimachinery/pkg/util/version"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/kubernetes/pkg/controlplane"
 )
 
 type clusterProfile string
@@ -48,9 +39,9 @@ type servedAPIEntry struct {
 }
 
 // forProfileAndVersion is a stub for servedapis.ForProfileAndVersion in openshift/api.
-// Returns required and optional API entries for the Default feature set at the given
-// cluster profile and Kubernetes version. Includes APIs enabled by Default feature set gates.
-// Returns found=false when data is unavailable (unsupported profile, or during kube rebase).
+// Returns required and optional OpenShift API entries for the Default feature set.
+// Kubernetes APIs are returned separately from inventory.ForKubeVersion().
+// Returns found=false when data is unavailable (unsupported profile).
 func forProfileAndVersion(profile clusterProfile, kubeVersion *utilversion.Version) (required, optional []servedAPIEntry, found bool) {
 	if profile != clusterProfileSelfManagedHA {
 		// Hypershift stub data is not yet generated; the test will skip.
@@ -61,93 +52,7 @@ func forProfileAndVersion(profile clusterProfile, kubeVersion *utilversion.Versi
 	req = append(req, openshiftAggregatedAPIs(profile)...)
 	req = append(req, openshiftCRDs(profile)...)
 
-	// Kubernetes APIs: derived from scheme + DefaultAPIResourceConfigSource at test time.
-	// In the real openshift/api implementation these are pre-generated per kube version.
-	kubeEntries, err := kubeResourcesFromScheme()
-	if err != nil {
-		return nil, nil, false
-	}
-	for gvr := range kubeEntries {
-		req = append(req, servedAPIEntry{
-			Group:    gvr.Group,
-			Version:  gvr.Version,
-			Resource: gvr.Resource,
-			Source:   sourceCoreKube,
-		})
-	}
-
 	return req, openshiftOptionalAPIs(), true
-}
-
-// nonResourceKinds are Kubernetes types that exist in the client-go scheme but are not
-// top-level REST resources: subresource-only types, discovery meta types, and internal
-// streaming/status types. This list is small and stable across releases.
-var nonResourceKinds = sets.New(
-	// subresource-only types (accessible only under a parent resource path)
-	"Eviction",
-	"NodeProxyOptions",
-	"PodAttachOptions",
-	"PodExecOptions",
-	"PodPortForwardOptions",
-	"PodProxyOptions",
-	"RangeAllocation",
-	"Scale",
-	"SerializedReference",
-	"ServiceProxyOptions",
-	"TokenRequest",
-	// discovery meta types (served at /api and /apis, not as regular resources)
-	"APIGroup",
-	"APIVersions",
-	// internal streaming type used for watch responses, not a REST resource
-	"WatchEvent",
-	// error/status envelope, not a REST resource
-	"Status",
-	// internal pod phase type, not served
-	"PodStatusResult",
-)
-
-func shouldSkipKind(kind string) bool {
-	if strings.HasSuffix(kind, "List") {
-		return true
-	}
-	if strings.HasSuffix(kind, "Options") {
-		return true
-	}
-	// Note: do NOT filter on "Review" suffix. TokenReview, SubjectAccessReview,
-	// SelfSubjectAccessReview etc. are real top-level POST endpoints.
-	return nonResourceKinds.Has(kind)
-}
-
-// kubeResourcesFromScheme derives the expected set of Kubernetes API resources using
-// the vendored client-go scheme and DefaultAPIResourceConfigSource.
-// In the real openshift/api implementation this is pre-generated per kube version; here
-// it runs at test time against the currently vendored scheme.
-func kubeResourcesFromScheme() (sets.Set[schema.GroupVersionResource], error) {
-	resourceConfig := controlplane.DefaultAPIResourceConfigSource()
-	result := sets.New[schema.GroupVersionResource]()
-
-	for gv, enabled := range resourceConfig.GroupVersionConfigs {
-		if !enabled {
-			continue
-		}
-		for kind := range clientgoscheme.Scheme.KnownTypes(gv) {
-			if shouldSkipKind(kind) {
-				continue
-			}
-			plural, _ := meta.UnsafeGuessKindToResource(gv.WithKind(kind))
-			result.Insert(plural)
-		}
-	}
-
-	// A small number of required Kubernetes resources live in separate vendored packages
-	// (apiextensions-apiserver, kube-aggregator) and are not registered in clientgoscheme.
-	for _, gvr := range []schema.GroupVersionResource{
-		{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"},
-		{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices"},
-	} {
-		result.Insert(gvr)
-	}
-	return result, nil
 }
 
 func openshiftAggregatedAPIs(profile clusterProfile) []servedAPIEntry {

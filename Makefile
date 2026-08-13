@@ -49,6 +49,7 @@ verify-origin:
 	hack/verify-jsonformat.sh
 	hack/verify-generated.sh
 	hack/verify-tls-ownership.sh
+	hack/verify-kube-api-inventory.sh
 .PHONY: verify-origin verify
 verify: verify-origin verify-apm
 
@@ -56,7 +57,7 @@ verify: verify-origin verify-apm
 #
 # Example:
 #   make update
-update: update-tls-ownership update-bindata
+update: update-tls-ownership update-bindata update-kube-api-inventory
 	hack/update-generated.sh
 .PHONY: update
 
@@ -67,6 +68,22 @@ update: update-tls-ownership update-bindata
 update-tls-ownership:
 	hack/update-tls-ownership.sh
 .PHONY: update-tls-ownership
+
+# Update Kubernetes API inventory
+#
+# Example:
+#    make update-kube-api-inventory
+update-kube-api-inventory:
+	hack/update-kube-api-inventory.sh
+.PHONY: update-kube-api-inventory
+
+# Verify Kubernetes API inventory
+#
+# Example:
+#    make verify-kube-api-inventory
+verify-kube-api-inventory:
+	hack/verify-kube-api-inventory.sh
+.PHONY: verify-kube-api-inventory
 
 # Update external examples
 #

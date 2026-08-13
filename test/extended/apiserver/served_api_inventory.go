@@ -27,6 +27,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/openshift/origin/test/extended/apiserver/inventory"
 	exutil "github.com/openshift/origin/test/extended/util"
 )
 
@@ -62,13 +63,21 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 			profile, featureGate.Spec.FeatureSet, kubeVersion)
 
 		// 2. Build the expected API set.
-		// forProfileAndVersion is a stub for servedapis.ForProfileAndVersion() in openshift/api.
-		// It returns all expected APIs (OpenShift + Kubernetes) for the Default feature set.
-		// Returns found=false when data isn't available (unsupported profile, or during kube rebase).
-		required, optional, found := forProfileAndVersion(profile, kubeVersion)
-		if !found {
-			e2eskipper.Skipf("API inventory for profile=%s kubeVersion=%d.%d not found. This is expected during Kubernetes rebase.", profile, kubeVersion.Major(), kubeVersion.Minor())
+		// Get OpenShift APIs from stub (will be from vendored openshift/api later)
+		osRequired, osOptional, osFound := forProfileAndVersion(profile, kubeVersion)
+		if !osFound {
+			e2eskipper.Skipf("OpenShift API inventory for profile=%s not found.", profile)
 		}
+
+		// Get Kubernetes APIs from generated inventory
+		kubeAPIs, kubeFound := inventory.ForKubeVersion(kubeVersion)
+		if !kubeFound {
+			e2eskipper.Skipf("Kubernetes API inventory for version %d.%d not found. This is expected during Kubernetes rebase. Run: make update-kube-api-inventory", kubeVersion.Major(), kubeVersion.Minor())
+		}
+
+		// Combine required lists
+		required := append(osRequired, convertToStubFormat(kubeAPIs)...)
+		optional := osOptional
 
 		// 3. Build expected GVR sets.
 		requiredSet := sets.New[schema.GroupVersionResource]()
@@ -112,6 +121,21 @@ func clusterProfileName(topology configv1.TopologyMode) clusterProfile {
 		return clusterProfileHypershift
 	}
 	return clusterProfileSelfManagedHA
+}
+
+// convertToStubFormat converts inventory.ServedAPIEntry to the stub format.
+// This will be removed when we vendor openshift/api and use the same types everywhere.
+func convertToStubFormat(entries []inventory.ServedAPIEntry) []servedAPIEntry {
+	result := make([]servedAPIEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, servedAPIEntry{
+			Group:    e.Group,
+			Version:  e.Version,
+			Resource: e.Resource,
+			Source:   source(e.Source),
+		})
+	}
+	return result
 }
 
 // discoveredResources queries the cluster's API discovery and returns all served top-level

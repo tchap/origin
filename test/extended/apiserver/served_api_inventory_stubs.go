@@ -7,47 +7,154 @@ package apiserver
 //   1. Delete this file.
 //   2. Add:  import "github.com/openshift/api/servedapis"
 //            import "github.com/openshift/api/features"
-//   3. Replace servedAPIsForProfile → servedapis.ForProfile
-//            kubeAPIOverridesForGate → features.KubeAPIOverridesForGate
-//            servedAPIEntry           → servedapis.ServedAPIEntry
-//            apiSource / sourceXxx   → servedapis.Source / servedapis.SourceXxx
+//   3. Replace:
+//      clusterProfile          → servedapis.ClusterProfile
+//      clusterProfileXxx       → servedapis.ClusterProfileXxx
+//      source / sourceXxx      → servedapis.Source / servedapis.SourceXxx
+//      servedAPIEntry          → servedapis.ServedAPIEntry
+//      forProfileAndVersion    → servedapis.ForProfileAndVersion
+//      kubeAPIOverridesForGate → (derived from features.KubeAPIOverridesByFeatureGate)
 
 import (
-	"github.com/blang/semver/v4"
+	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
+	utilversion "k8s.io/apimachinery/pkg/util/version"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/kubernetes/pkg/controlplane"
 
 	configv1 "github.com/openshift/api/config/v1"
 )
 
-type apiSource string
+type clusterProfile string
 
 const (
-	sourceOpenShiftCRD       apiSource = "openshift-crd"
-	sourceOpenShiftAPIServer apiSource = "openshift-apiserver"
-	sourceOAuthAPIServer     apiSource = "oauth-apiserver"
-	sourceOptional           apiSource = "optional"
+	clusterProfileSelfManagedHA clusterProfile = "SelfManagedHA"
+	clusterProfileHypershift    clusterProfile = "Hypershift"
+)
+
+type source string
+
+const (
+	sourceCoreKube           source = "core-kube"
+	sourceOpenShiftCRD       source = "openshift-crd"
+	sourceOpenShiftAPIServer source = "openshift-apiserver"
+	sourceOAuthAPIServer     source = "oauth-apiserver"
 )
 
 type servedAPIEntry struct {
 	Group    string
 	Version  string
 	Resource string
-	Source   apiSource
+	Source   source
 }
 
-// servedAPIsForProfile is a stub for servedapis.ForProfile(clusterProfile, featureSet).
-// Returns a hardcoded list of OpenShift API resources for the PoC.
-// The real function is generated from CRD manifests and aggregated API server definitions.
-func servedAPIsForProfile(clusterProfile, featureSet string) []servedAPIEntry {
-	var result []servedAPIEntry
-	result = append(result, openshiftAggregatedAPIs(clusterProfile)...)
-	result = append(result, openshiftCRDs(clusterProfile, featureSet)...)
-	result = append(result, openshiftOptionalAPIs()...)
-	return result
+// forProfileAndVersion is a stub for servedapis.ForProfileAndVersion in openshift/api.
+// Returns required and optional API entries for the given cluster profile and Kubernetes version.
+// Returns found=false when data is unavailable (unsupported profile, or during kube rebase).
+// Only supports the Default feature set — the test skips on TechPreview/DevPreview.
+func forProfileAndVersion(profile clusterProfile, kubeVersion *utilversion.Version) (required, optional []servedAPIEntry, found bool) {
+	if profile != clusterProfileSelfManagedHA {
+		// Hypershift stub data is not yet generated; the test will skip.
+		return nil, nil, false
+	}
+
+	var req []servedAPIEntry
+	req = append(req, openshiftAggregatedAPIs(profile)...)
+	req = append(req, openshiftCRDs(profile)...)
+
+	// Kubernetes APIs: derived from scheme + DefaultAPIResourceConfigSource at test time.
+	// In the real openshift/api implementation these are pre-generated per kube version.
+	kubeEntries, err := kubeResourcesFromScheme()
+	if err != nil {
+		return nil, nil, false
+	}
+	for gvr := range kubeEntries {
+		req = append(req, servedAPIEntry{
+			Group:    gvr.Group,
+			Version:  gvr.Version,
+			Resource: gvr.Resource,
+			Source:   sourceCoreKube,
+		})
+	}
+
+	return req, openshiftOptionalAPIs(), true
 }
 
-func openshiftAggregatedAPIs(clusterProfile string) []servedAPIEntry {
+// nonResourceKinds are Kubernetes types that exist in the client-go scheme but are not
+// top-level REST resources: subresource-only types, discovery meta types, and internal
+// streaming/status types. This list is small and stable across releases.
+var nonResourceKinds = sets.New(
+	// subresource-only types (accessible only under a parent resource path)
+	"Eviction",
+	"NodeProxyOptions",
+	"PodAttachOptions",
+	"PodExecOptions",
+	"PodPortForwardOptions",
+	"PodProxyOptions",
+	"RangeAllocation",
+	"Scale",
+	"SerializedReference",
+	"ServiceProxyOptions",
+	"TokenRequest",
+	// discovery meta types (served at /api and /apis, not as regular resources)
+	"APIGroup",
+	"APIVersions",
+	// internal streaming type used for watch responses, not a REST resource
+	"WatchEvent",
+	// error/status envelope, not a REST resource
+	"Status",
+	// internal pod phase type, not served
+	"PodStatusResult",
+)
+
+func shouldSkipKind(kind string) bool {
+	if strings.HasSuffix(kind, "List") {
+		return true
+	}
+	if strings.HasSuffix(kind, "Options") {
+		return true
+	}
+	// Note: do NOT filter on "Review" suffix. TokenReview, SubjectAccessReview,
+	// SelfSubjectAccessReview etc. are real top-level POST endpoints.
+	return nonResourceKinds.Has(kind)
+}
+
+// kubeResourcesFromScheme derives the expected set of Kubernetes API resources using
+// the vendored client-go scheme and DefaultAPIResourceConfigSource.
+// In the real openshift/api implementation this is pre-generated per kube version; here
+// it runs at test time against the currently vendored scheme.
+func kubeResourcesFromScheme() (sets.Set[schema.GroupVersionResource], error) {
+	resourceConfig := controlplane.DefaultAPIResourceConfigSource()
+	result := sets.New[schema.GroupVersionResource]()
+
+	for gv, enabled := range resourceConfig.GroupVersionConfigs {
+		if !enabled {
+			continue
+		}
+		for kind := range clientgoscheme.Scheme.KnownTypes(gv) {
+			if shouldSkipKind(kind) {
+				continue
+			}
+			plural, _ := meta.UnsafeGuessKindToResource(gv.WithKind(kind))
+			result.Insert(plural)
+		}
+	}
+
+	// A small number of required Kubernetes resources live in separate vendored packages
+	// (apiextensions-apiserver, kube-aggregator) and are not registered in clientgoscheme.
+	for _, gvr := range []schema.GroupVersionResource{
+		{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"},
+		{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices"},
+	} {
+		result.Insert(gvr)
+	}
+	return result, nil
+}
+
+func openshiftAggregatedAPIs(profile clusterProfile) []servedAPIEntry {
 	// openshift-apiserver resources (9 groups, all v1)
 	osaResources := []struct{ group, resource string }{
 		{"apps.openshift.io", "deploymentconfigs"},
@@ -95,7 +202,7 @@ func openshiftAggregatedAPIs(clusterProfile string) []servedAPIEntry {
 	// oauth-apiserver resources (2 groups, all v1).
 	// On HyperShift clusters with external OIDC, oauth-apiserver may not be deployed,
 	// so these are only required for the SelfManagedHA profile.
-	if clusterProfile == "SelfManagedHA" {
+	if profile == clusterProfileSelfManagedHA {
 		oauthResources := []struct{ group, resource string }{
 			{"oauth.openshift.io", "oauthaccesstokens"},
 			{"oauth.openshift.io", "oauthauthorizetokens"},
@@ -115,130 +222,116 @@ func openshiftAggregatedAPIs(clusterProfile string) []servedAPIEntry {
 	return result
 }
 
-func openshiftCRDs(clusterProfile, featureSet string) []servedAPIEntry {
-	// OpenShift CRDs from payload-manifests/crds/. The real function reads all CRD manifests;
+func openshiftCRDs(profile clusterProfile) []servedAPIEntry {
+	// OpenShift CRDs from payload-manifests/crds/. The real implementation reads all CRD manifests;
 	// this stub covers the full set observed on a Default SelfManagedHA cluster.
-	// techPreviewOnly=true means the CRD carries release.openshift.io/feature-set annotation
-	// and is absent on Default clusters.
-	type crdDef struct {
-		group, version, resource string
-		techPreviewOnly          bool
-	}
-	crds := []crdDef{
+	// TechPreview-only CRDs are excluded — the test skips on non-Default feature sets.
+	crds := []struct{ group, version, resource string }{
 		// apiserver.openshift.io
-		{"apiserver.openshift.io", "v1", "apirequestcounts", false},
+		{"apiserver.openshift.io", "v1", "apirequestcounts"},
 		// cloud.network.openshift.io
-		{"cloud.network.openshift.io", "v1", "cloudprivateipconfigs", false},
+		{"cloud.network.openshift.io", "v1", "cloudprivateipconfigs"},
 		// config.openshift.io
-		{"config.openshift.io", "v1", "apiservers", false},
-		{"config.openshift.io", "v1", "authentications", false},
-		{"config.openshift.io", "v1", "builds", false},
-		{"config.openshift.io", "v1", "clusterimagepolicies", false},
-		{"config.openshift.io", "v1", "clusteroperators", false},
-		{"config.openshift.io", "v1", "clusterversions", false},
-		{"config.openshift.io", "v1", "consoles", false},
-		{"config.openshift.io", "v1", "criocredentialproviderconfigs", false},
-		{"config.openshift.io", "v1", "dnses", false},
-		{"config.openshift.io", "v1", "featuregates", false},
-		{"config.openshift.io", "v1", "imagecontentpolicies", false},
-		{"config.openshift.io", "v1", "imagedigestmirrorsets", false},
-		{"config.openshift.io", "v1", "imagepolicies", false},
-		{"config.openshift.io", "v1", "images", false},
-		{"config.openshift.io", "v1", "imagetagmirrorsets", false},
-		{"config.openshift.io", "v1", "infrastructures", false},
-		{"config.openshift.io", "v1", "ingresses", false},
-		{"config.openshift.io", "v1", "insightsdatagathers", false},
-		{"config.openshift.io", "v1", "networks", false},
-		{"config.openshift.io", "v1", "nodes", false},
-		{"config.openshift.io", "v1", "oauths", false},
-		{"config.openshift.io", "v1", "operatorhubs", false},
-		{"config.openshift.io", "v1", "projects", false},
-		{"config.openshift.io", "v1", "proxies", false},
-		{"config.openshift.io", "v1", "schedulers", false},
+		{"config.openshift.io", "v1", "apiservers"},
+		{"config.openshift.io", "v1", "authentications"},
+		{"config.openshift.io", "v1", "builds"},
+		{"config.openshift.io", "v1", "clusterimagepolicies"},
+		{"config.openshift.io", "v1", "clusteroperators"},
+		{"config.openshift.io", "v1", "clusterversions"},
+		{"config.openshift.io", "v1", "consoles"},
+		{"config.openshift.io", "v1", "criocredentialproviderconfigs"},
+		{"config.openshift.io", "v1", "dnses"},
+		{"config.openshift.io", "v1", "featuregates"},
+		{"config.openshift.io", "v1", "imagecontentpolicies"},
+		{"config.openshift.io", "v1", "imagedigestmirrorsets"},
+		{"config.openshift.io", "v1", "imagepolicies"},
+		{"config.openshift.io", "v1", "images"},
+		{"config.openshift.io", "v1", "imagetagmirrorsets"},
+		{"config.openshift.io", "v1", "infrastructures"},
+		{"config.openshift.io", "v1", "ingresses"},
+		{"config.openshift.io", "v1", "insightsdatagathers"},
+		{"config.openshift.io", "v1", "networks"},
+		{"config.openshift.io", "v1", "nodes"},
+		{"config.openshift.io", "v1", "oauths"},
+		{"config.openshift.io", "v1", "operatorhubs"},
+		{"config.openshift.io", "v1", "projects"},
+		{"config.openshift.io", "v1", "proxies"},
+		{"config.openshift.io", "v1", "schedulers"},
 		// console.openshift.io
-		{"console.openshift.io", "v1", "consoleclidownloads", false},
-		{"console.openshift.io", "v1", "consoleexternalloglinks", false},
-		{"console.openshift.io", "v1", "consolelinks", false},
-		{"console.openshift.io", "v1", "consolenotifications", false},
-		{"console.openshift.io", "v1", "consoleplugins", false},
-		{"console.openshift.io", "v1", "consolequickstarts", false},
-		{"console.openshift.io", "v1", "consolesamples", false},
-		{"console.openshift.io", "v1", "consoleyamlsamples", false},
+		{"console.openshift.io", "v1", "consoleclidownloads"},
+		{"console.openshift.io", "v1", "consoleexternalloglinks"},
+		{"console.openshift.io", "v1", "consolelinks"},
+		{"console.openshift.io", "v1", "consolenotifications"},
+		{"console.openshift.io", "v1", "consoleplugins"},
+		{"console.openshift.io", "v1", "consolequickstarts"},
+		{"console.openshift.io", "v1", "consolesamples"},
+		{"console.openshift.io", "v1", "consoleyamlsamples"},
 		// controlplane.operator.openshift.io
-		{"controlplane.operator.openshift.io", "v1alpha1", "podnetworkconnectivitychecks", false},
+		{"controlplane.operator.openshift.io", "v1alpha1", "podnetworkconnectivitychecks"},
 		// imageregistry.operator.openshift.io
-		{"imageregistry.operator.openshift.io", "v1", "configs", false},
-		{"imageregistry.operator.openshift.io", "v1", "imagepruners", false},
+		{"imageregistry.operator.openshift.io", "v1", "configs"},
+		{"imageregistry.operator.openshift.io", "v1", "imagepruners"},
 		// ingress.operator.openshift.io
-		{"ingress.operator.openshift.io", "v1", "dnsrecords", false},
+		{"ingress.operator.openshift.io", "v1", "dnsrecords"},
 		// insights.openshift.io
-		{"insights.openshift.io", "v1", "datagathers", false},
+		{"insights.openshift.io", "v1", "datagathers"},
 		// machine.openshift.io
-		{"machine.openshift.io", "v1", "controlplanemachinesets", false},
+		{"machine.openshift.io", "v1", "controlplanemachinesets"},
 		// machineconfiguration.openshift.io
-		{"machineconfiguration.openshift.io", "v1", "containerruntimeconfigs", false},
-		{"machineconfiguration.openshift.io", "v1", "controllerconfigs", false},
-		{"machineconfiguration.openshift.io", "v1", "kubeletconfigs", false},
-		{"machineconfiguration.openshift.io", "v1", "machineconfignodes", false},
-		{"machineconfiguration.openshift.io", "v1", "machineconfigpools", false},
-		{"machineconfiguration.openshift.io", "v1", "machineconfigs", false},
-		{"machineconfiguration.openshift.io", "v1", "machineosbuilds", false},
-		{"machineconfiguration.openshift.io", "v1", "machineosconfigs", false},
-		{"machineconfiguration.openshift.io", "v1", "pinnedimagesets", false},
-		{"machineconfiguration.openshift.io", "v1", "internalreleaseimages", false},
-		{"machineconfiguration.openshift.io", "v1", "osimagestreams", false},
+		{"machineconfiguration.openshift.io", "v1", "containerruntimeconfigs"},
+		{"machineconfiguration.openshift.io", "v1", "controllerconfigs"},
+		{"machineconfiguration.openshift.io", "v1", "kubeletconfigs"},
+		{"machineconfiguration.openshift.io", "v1", "machineconfignodes"},
+		{"machineconfiguration.openshift.io", "v1", "machineconfigpools"},
+		{"machineconfiguration.openshift.io", "v1", "machineconfigs"},
+		{"machineconfiguration.openshift.io", "v1", "machineosbuilds"},
+		{"machineconfiguration.openshift.io", "v1", "machineosconfigs"},
+		{"machineconfiguration.openshift.io", "v1", "pinnedimagesets"},
+		{"machineconfiguration.openshift.io", "v1", "internalreleaseimages"},
+		{"machineconfiguration.openshift.io", "v1", "osimagestreams"},
 		// monitoring.openshift.io
-		{"monitoring.openshift.io", "v1", "alertingrules", false},
-		{"monitoring.openshift.io", "v1", "alertrelabelconfigs", false},
+		{"monitoring.openshift.io", "v1", "alertingrules"},
+		{"monitoring.openshift.io", "v1", "alertrelabelconfigs"},
 		// network.operator.openshift.io
-		{"network.operator.openshift.io", "v1", "egressrouters", false},
-		{"network.operator.openshift.io", "v1", "operatorpkis", false},
+		{"network.operator.openshift.io", "v1", "egressrouters"},
+		{"network.operator.openshift.io", "v1", "operatorpkis"},
 		// operator.openshift.io
-		{"operator.openshift.io", "v1", "authentications", false},
-		{"operator.openshift.io", "v1", "cloudcredentials", false},
-		{"operator.openshift.io", "v1", "clustercsidrivers", false},
-		{"operator.openshift.io", "v1", "configs", false},
-		{"operator.openshift.io", "v1", "consoles", false},
-		{"operator.openshift.io", "v1", "csisnapshotcontrollers", false},
-		{"operator.openshift.io", "v1", "dnses", false},
-		{"operator.openshift.io", "v1", "etcds", false},
-		{"operator.openshift.io", "v1", "ingresscontrollers", false},
-		{"operator.openshift.io", "v1", "insightsoperators", false},
-		{"operator.openshift.io", "v1", "kubeapiservers", false},
-		{"operator.openshift.io", "v1", "kubecontrollermanagers", false},
-		{"operator.openshift.io", "v1", "kubeschedulers", false},
-		{"operator.openshift.io", "v1", "kubestorageversionmigrators", false},
-		{"operator.openshift.io", "v1", "machineconfigurations", false},
-		{"operator.openshift.io", "v1", "networks", false},
-		{"operator.openshift.io", "v1", "olms", false},
-		{"operator.openshift.io", "v1", "openshiftapiservers", false},
-		{"operator.openshift.io", "v1", "openshiftcontrollermanagers", false},
-		{"operator.openshift.io", "v1", "servicecas", false},
-		{"operator.openshift.io", "v1", "storages", false},
-		{"operator.openshift.io", "v1alpha1", "imagecontentsourcepolicies", false},
+		{"operator.openshift.io", "v1", "authentications"},
+		{"operator.openshift.io", "v1", "cloudcredentials"},
+		{"operator.openshift.io", "v1", "clustercsidrivers"},
+		{"operator.openshift.io", "v1", "configs"},
+		{"operator.openshift.io", "v1", "consoles"},
+		{"operator.openshift.io", "v1", "csisnapshotcontrollers"},
+		{"operator.openshift.io", "v1", "dnses"},
+		{"operator.openshift.io", "v1", "etcds"},
+		{"operator.openshift.io", "v1", "ingresscontrollers"},
+		{"operator.openshift.io", "v1", "insightsoperators"},
+		{"operator.openshift.io", "v1", "kubeapiservers"},
+		{"operator.openshift.io", "v1", "kubecontrollermanagers"},
+		{"operator.openshift.io", "v1", "kubeschedulers"},
+		{"operator.openshift.io", "v1", "kubestorageversionmigrators"},
+		{"operator.openshift.io", "v1", "machineconfigurations"},
+		{"operator.openshift.io", "v1", "networks"},
+		{"operator.openshift.io", "v1", "olms"},
+		{"operator.openshift.io", "v1", "openshiftapiservers"},
+		{"operator.openshift.io", "v1", "openshiftcontrollermanagers"},
+		{"operator.openshift.io", "v1", "servicecas"},
+		{"operator.openshift.io", "v1", "storages"},
+		{"operator.openshift.io", "v1alpha1", "imagecontentsourcepolicies"},
 		// samples.operator.openshift.io
-		{"samples.operator.openshift.io", "v1", "configs", false},
+		{"samples.operator.openshift.io", "v1", "configs"},
 		// security.internal.openshift.io
-		{"security.internal.openshift.io", "v1", "rangeallocations", false},
-		// TechPreview-only CRDs
-		{"config.openshift.io", "v1", "backups", true},
-		{"config.openshift.io", "v1", "clustermonitorings", true},
-		{"operator.openshift.io", "v1", "etcdbackups", true},
-		{"config.openshift.io", "v1", "pkis", true},
+		{"security.internal.openshift.io", "v1", "rangeallocations"},
 	}
-	isTechPreview := featureSet == string(configv1.TechPreviewNoUpgrade) ||
-		featureSet == string(configv1.DevPreviewNoUpgrade)
+
 	result := make([]servedAPIEntry, 0, len(crds))
 	for _, c := range crds {
-		if c.techPreviewOnly && !isTechPreview {
-			continue
-		}
 		result = append(result, servedAPIEntry{Group: c.group, Version: c.version, Resource: c.resource, Source: sourceOpenShiftCRD})
 	}
 
 	// Machine API is required on SelfManagedHA clusters but absent on HyperShift
-	// (worker nodes on HyperShift are managed by the management cluster, not the hosted cluster).
-	if clusterProfile == "SelfManagedHA" {
+	// (worker nodes on HyperShift are managed by the management cluster).
+	if profile == clusterProfileSelfManagedHA {
 		for _, r := range []struct{ version, resource string }{
 			{"v1beta1", "machinehealthchecks"},
 			{"v1beta1", "machines"},
@@ -252,8 +345,7 @@ func openshiftCRDs(clusterProfile, featureSet string) []servedAPIEntry {
 }
 
 func openshiftOptionalAPIs() []servedAPIEntry {
-	// APIs from optional operators/components outside the core payload, or from third-party
-	// operators commonly installed on OpenShift clusters. Their absence is not a failure.
+	// APIs from optional operators/components outside the core payload. Their absence is not a failure.
 	optional := []struct{ group, version, resource string }{
 		// Cluster Autoscaler / Machine Autoscaler
 		{"autoscaling.openshift.io", "v1", "clusterautoscalers"},
@@ -359,50 +451,61 @@ func openshiftOptionalAPIs() []servedAPIEntry {
 	}
 	result := make([]servedAPIEntry, 0, len(optional))
 	for _, r := range optional {
-		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, Source: sourceOptional})
+		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, Source: sourceOpenShiftCRD})
 	}
 	return result
 }
 
-// kubeAPIOverride is a stub for features.KubeAPIOverride in openshift/api.
-// Mirrors the structure from cluster-kube-apiserver-operator's groupVersionByOpenshiftVersion,
-// extended to GVR granularity. The real openshift/api implementation uses GroupVersion +
-// scheme-based derivation; the stub uses explicit GVRs because the client-go scheme retains
-// historical registrations (e.g. ValidatingAdmissionPolicy at v1alpha1, webhook configs at
-// v1beta1) for types that have since graduated, making scheme-based derivation inaccurate
-// for alpha/beta override GVs.
+// kubeAPIOverridesForGate returns the GVRs that should be added to the required set
+// when the given OpenShift feature gate is enabled, filtered to the given Kubernetes version.
+// Stub for features.KubeAPIOverridesByFeatureGate in openshift/api.
+func kubeAPIOverridesForGate(gate configv1.FeatureGateName, kubeVersion *utilversion.Version) []schema.GroupVersionResource {
+	entries, ok := defaultGVRsByFeatureGate[gate]
+	if !ok {
+		return nil
+	}
+	var result []schema.GroupVersionResource
+	for _, e := range entries {
+		if e.matchesVersion(kubeVersion) {
+			result = append(result, e.GroupVersionResource)
+		}
+	}
+	return result
+}
+
+// versionPredicate is a filter for Kubernetes versions.
+type versionPredicate func(*utilversion.Version) bool
+
+// kubeAPIOverride maps a GVR to the Kubernetes version range it applies to.
 type kubeAPIOverride struct {
 	schema.GroupVersionResource
-	// KubeVersionRange filters which Kubernetes versions this entry applies to.
+	// KubeVersionRange restricts which Kubernetes versions this entry applies to.
 	// nil means all versions.
-	KubeVersionRange semver.Range
+	KubeVersionRange versionPredicate
+}
+
+func (o kubeAPIOverride) matchesVersion(v *utilversion.Version) bool {
+	return o.KubeVersionRange == nil || o.KubeVersionRange(v)
+}
+
+// minorBetween returns a predicate that matches versions with Minor in [minMinor, maxMinor).
+func minorBetween(minMinor, maxMinor uint) versionPredicate {
+	return func(v *utilversion.Version) bool {
+		m := v.Minor()
+		return m >= minMinor && m < maxMinor
+	}
 }
 
 // defaultGVRsByFeatureGate is a stub for features.KubeAPIOverridesByFeatureGate in openshift/api.
 // Ported from cluster-kube-apiserver-operator's defaultGroupVersionsByFeatureGate, with
-// GVRs replacing GVs to avoid pulling in stale scheme registrations.
+// explicit GVRs to avoid pulling in stale scheme registrations for beta GVs.
 var defaultGVRsByFeatureGate = map[configv1.FeatureGateName][]kubeAPIOverride{
 	"MutatingAdmissionPolicy": {
 		// Both v1alpha1 and v1beta1 must be served pre-GA because e2e tests exercise both.
-		// TODO: Remove once openshift-apiserver is rebased to k8s 1.36+ (MutatingAdmissionPolicy v1).
-		{KubeVersionRange: semver.MustParseRange(">=1.33.0 <1.37.0"), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicies"}},
-		{KubeVersionRange: semver.MustParseRange(">=1.33.0 <1.37.0"), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicybindings"}},
-		{KubeVersionRange: semver.MustParseRange(">=1.34.0 <1.37.0"), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicies"}},
-		{KubeVersionRange: semver.MustParseRange(">=1.34.0 <1.37.0"), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicybindings"}},
+		// TODO: Remove once MutatingAdmissionPolicy graduates to v1 (kube 1.37+).
+		{KubeVersionRange: minorBetween(33, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicies"}},
+		{KubeVersionRange: minorBetween(33, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicybindings"}},
+		{KubeVersionRange: minorBetween(34, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicies"}},
+		{KubeVersionRange: minorBetween(34, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicybindings"}},
 	},
-}
-
-// kubeAPIOverridesByVersion filters defaultGVRsByFeatureGate to only the entries that apply
-// to the given Kubernetes version, returning the active GVRs per gate.
-// Stub for features.KubeAPIOverridesByVersion in openshift/api.
-func kubeAPIOverridesByVersion(kubeVersion semver.Version) map[configv1.FeatureGateName][]schema.GroupVersionResource {
-	result := make(map[configv1.FeatureGateName][]schema.GroupVersionResource, len(defaultGVRsByFeatureGate))
-	for gate, entries := range defaultGVRsByFeatureGate {
-		for _, e := range entries {
-			if e.KubeVersionRange == nil || e.KubeVersionRange(kubeVersion) {
-				result[gate] = append(result[gate], e.GroupVersionResource)
-			}
-		}
-	}
-	return result
 }

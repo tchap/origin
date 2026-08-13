@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
+	utilversion "k8s.io/apimachinery/pkg/util/version"
 	componentbaseversion "k8s.io/component-base/version"
 
 	"github.com/openshift/origin/test/extended/apiserver/inventory"
@@ -33,12 +32,13 @@ func run(cmd *cobra.Command, args []string) error {
 	verify, _ := cmd.Flags().GetBool("verify")
 
 	// Get the current Kubernetes version from component-base
-	kubeVersion := componentbaseversion.DefaultKubeBinaryVersion
-	minor, err := parseKubeMinorVersion(kubeVersion)
+	// DefaultKubeBinaryVersion is like "1.36"
+	kubeVersion, err := utilversion.ParseGeneric(componentbaseversion.DefaultKubeBinaryVersion)
 	if err != nil {
-		return fmt.Errorf("failed to parse Kubernetes version %q: %w", kubeVersion, err)
+		return fmt.Errorf("failed to parse Kubernetes version %q: %w", componentbaseversion.DefaultKubeBinaryVersion, err)
 	}
 
+	minor := int(kubeVersion.Minor())
 	fmt.Printf("Generating Kubernetes API inventory for version 1.%d\n", minor)
 
 	// Generate the inventory
@@ -84,31 +84,4 @@ func run(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully wrote %s\n", outputPath)
 	return nil
-}
-
-// parseKubeMinorVersion extracts the minor version number from the version string.
-// Examples: "1.36" → 36
-func parseKubeMinorVersion(version string) (int, error) {
-	// Split on "."
-	parts := strings.Split(version, ".")
-	if len(parts) < 2 {
-		return 0, fmt.Errorf("invalid version format: %s", version)
-	}
-
-	// Parse major version (should be 1)
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, fmt.Errorf("invalid major version: %s", parts[0])
-	}
-	if major != 1 {
-		return 0, fmt.Errorf("unexpected major version: %d (expected 1)", major)
-	}
-
-	// Parse minor version
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, fmt.Errorf("invalid minor version: %s", parts[1])
-	}
-
-	return minor, nil
 }

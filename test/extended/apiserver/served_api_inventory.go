@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -18,7 +19,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	utilversion "k8s.io/apimachinery/pkg/util/version"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 
@@ -112,20 +115,36 @@ func clusterProfileName(topology configv1.TopologyMode) clusterProfile {
 }
 
 // discoveredResources queries the cluster's API discovery and returns all served top-level
-// resources (subresources containing "/" are excluded).
+// resources (subresources containing "/" are excluded). Retries on partial failures.
 func discoveredResources(oc *exutil.CLI) (sets.Set[schema.GroupVersionResource], error) {
 	discoveryClient := discovery.NewDiscoveryClientForConfigOrDie(oc.AdminConfig())
-	_, resourceLists, err := discoveryClient.ServerGroupsAndResources()
+	var resourceLists []*metav1.APIResourceList
 
-	var groupFailed *discovery.ErrGroupDiscoveryFailed
-	if err != nil && !errors.As(err, &groupFailed) {
-		return nil, fmt.Errorf("discovery failed: %w", err)
-	}
-	if groupFailed != nil {
-		// Log but continue — partial discovery is common during rolling restarts.
-		for gv, gvErr := range groupFailed.Groups {
-			framework.Logf("discovery failed for group %s: %v", gv, gvErr)
+	// Retry on partial discovery failures (aggregated API servers restarting, etc.)
+	err := retry.OnError(
+		wait.Backoff{
+			Duration: 2 * time.Second,
+			Steps:    5,
+			Factor:   2.0,
+			Jitter:   0.1,
+			Cap:      10 * time.Second,
+		},
+		func(err error) bool {
+			var groupFailed *discovery.ErrGroupDiscoveryFailed
+			return errors.As(err, &groupFailed)
+		},
+		func() error {
+			_, lists, err := discoveryClient.ServerGroupsAndResources()
+			resourceLists = lists
+			return err
+		},
+	)
+	if err != nil {
+		var groupFailed *discovery.ErrGroupDiscoveryFailed
+		if errors.As(err, &groupFailed) {
+			return nil, fmt.Errorf("discovery failed for %d groups after retries: %w", len(groupFailed.Groups), err)
 		}
+		return nil, fmt.Errorf("discovery failed: %w", err)
 	}
 
 	result := sets.New[schema.GroupVersionResource]()

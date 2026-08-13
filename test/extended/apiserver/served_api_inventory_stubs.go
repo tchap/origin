@@ -1,19 +1,17 @@
 package apiserver
 
-// Stubs for the openshift/api servedapis and features packages.
+// Stubs for the openshift/api servedapis package.
 //
 // These stand in for the generated code that will live in openshift/api once Part A of
 // the plan is implemented. When that package is vendored into origin:
 //   1. Delete this file.
 //   2. Add:  import "github.com/openshift/api/servedapis"
-//            import "github.com/openshift/api/features"
 //   3. Replace:
-//      clusterProfile          → servedapis.ClusterProfile
-//      clusterProfileXxx       → servedapis.ClusterProfileXxx
-//      source / sourceXxx      → servedapis.Source / servedapis.SourceXxx
-//      servedAPIEntry          → servedapis.ServedAPIEntry
-//      forProfileAndVersion    → servedapis.ForProfileAndVersion
-//      kubeAPIOverridesForGate → (derived from features.KubeAPIOverridesByFeatureGate)
+//      clusterProfile       → servedapis.ClusterProfile
+//      clusterProfileXxx    → servedapis.ClusterProfileXxx
+//      source / sourceXxx   → servedapis.Source / servedapis.SourceXxx
+//      servedAPIEntry       → servedapis.ServedAPIEntry
+//      forProfileAndVersion → servedapis.ForProfileAndVersion
 
 import (
 	"strings"
@@ -24,8 +22,6 @@ import (
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/kubernetes/pkg/controlplane"
-
-	configv1 "github.com/openshift/api/config/v1"
 )
 
 type clusterProfile string
@@ -52,9 +48,9 @@ type servedAPIEntry struct {
 }
 
 // forProfileAndVersion is a stub for servedapis.ForProfileAndVersion in openshift/api.
-// Returns required and optional API entries for the given cluster profile and Kubernetes version.
+// Returns required and optional API entries for the Default feature set at the given
+// cluster profile and Kubernetes version. Includes APIs enabled by Default feature set gates.
 // Returns found=false when data is unavailable (unsupported profile, or during kube rebase).
-// Only supports the Default feature set — the test skips on TechPreview/DevPreview.
 func forProfileAndVersion(profile clusterProfile, kubeVersion *utilversion.Version) (required, optional []servedAPIEntry, found bool) {
 	if profile != clusterProfileSelfManagedHA {
 		// Hypershift stub data is not yet generated; the test will skip.
@@ -454,58 +450,4 @@ func openshiftOptionalAPIs() []servedAPIEntry {
 		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, Source: sourceOpenShiftCRD})
 	}
 	return result
-}
-
-// kubeAPIOverridesForGate returns the GVRs that should be added to the required set
-// when the given OpenShift feature gate is enabled, filtered to the given Kubernetes version.
-// Stub for features.KubeAPIOverridesByFeatureGate in openshift/api.
-func kubeAPIOverridesForGate(gate configv1.FeatureGateName, kubeVersion *utilversion.Version) []schema.GroupVersionResource {
-	entries, ok := defaultGVRsByFeatureGate[gate]
-	if !ok {
-		return nil
-	}
-	var result []schema.GroupVersionResource
-	for _, e := range entries {
-		if e.matchesVersion(kubeVersion) {
-			result = append(result, e.GroupVersionResource)
-		}
-	}
-	return result
-}
-
-// versionPredicate is a filter for Kubernetes versions.
-type versionPredicate func(*utilversion.Version) bool
-
-// kubeAPIOverride maps a GVR to the Kubernetes version range it applies to.
-type kubeAPIOverride struct {
-	schema.GroupVersionResource
-	// KubeVersionRange restricts which Kubernetes versions this entry applies to.
-	// nil means all versions.
-	KubeVersionRange versionPredicate
-}
-
-func (o kubeAPIOverride) matchesVersion(v *utilversion.Version) bool {
-	return o.KubeVersionRange == nil || o.KubeVersionRange(v)
-}
-
-// minorBetween returns a predicate that matches versions with Minor in [minMinor, maxMinor).
-func minorBetween(minMinor, maxMinor uint) versionPredicate {
-	return func(v *utilversion.Version) bool {
-		m := v.Minor()
-		return m >= minMinor && m < maxMinor
-	}
-}
-
-// defaultGVRsByFeatureGate is a stub for features.KubeAPIOverridesByFeatureGate in openshift/api.
-// Ported from cluster-kube-apiserver-operator's defaultGroupVersionsByFeatureGate, with
-// explicit GVRs to avoid pulling in stale scheme registrations for beta GVs.
-var defaultGVRsByFeatureGate = map[configv1.FeatureGateName][]kubeAPIOverride{
-	"MutatingAdmissionPolicy": {
-		// Both v1alpha1 and v1beta1 must be served pre-GA because e2e tests exercise both.
-		// TODO: Remove once MutatingAdmissionPolicy graduates to v1 (kube 1.37+).
-		{KubeVersionRange: minorBetween(33, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicies"}},
-		{KubeVersionRange: minorBetween(33, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Resource: "mutatingadmissionpolicybindings"}},
-		{KubeVersionRange: minorBetween(34, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicies"}},
-		{KubeVersionRange: minorBetween(34, 37), GroupVersionResource: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1beta1", Resource: "mutatingadmissionpolicybindings"}},
-	},
 }

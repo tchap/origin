@@ -43,7 +43,6 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		profile := clusterProfileName(*topology)
-		enabledGates := collectEnabledGates(featureGate)
 
 		if featureGate.Spec.FeatureSet != configv1.Default {
 			e2eskipper.Skipf("Test only runs on Default feature set, got %q", featureGate.Spec.FeatureSet)
@@ -56,32 +55,19 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 		kubeVersion, err := utilversion.ParseGeneric(serverVersion.GitVersion)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		framework.Logf("cluster profile=%s featureSet=%q kubeVersion=%s enabledGates=%v",
-			profile, featureGate.Spec.FeatureSet, kubeVersion, enabledGates)
+		framework.Logf("cluster profile=%s featureSet=%q kubeVersion=%s",
+			profile, featureGate.Spec.FeatureSet, kubeVersion)
 
 		// 2. Build the expected API set.
 		// forProfileAndVersion is a stub for servedapis.ForProfileAndVersion() in openshift/api.
-		// It returns all expected APIs (OpenShift + Kubernetes) for the profile and kube version.
+		// It returns all expected APIs (OpenShift + Kubernetes) for the Default feature set.
 		// Returns found=false when data isn't available (unsupported profile, or during kube rebase).
 		required, optional, found := forProfileAndVersion(profile, kubeVersion)
 		if !found {
 			e2eskipper.Skipf("API inventory for profile=%s kubeVersion=%d.%d not found. This is expected during Kubernetes rebase.", profile, kubeVersion.Major(), kubeVersion.Minor())
 		}
 
-		// 3. Apply Kubernetes API overrides for active OpenShift feature gates.
-		// Some OpenShift feature gates enable alpha/beta Kubernetes APIs beyond the defaults.
-		for _, gate := range enabledGates {
-			for _, gvr := range kubeAPIOverridesForGate(gate, kubeVersion) {
-				required = append(required, servedAPIEntry{
-					Group:    gvr.Group,
-					Version:  gvr.Version,
-					Resource: gvr.Resource,
-					Source:   sourceCoreKube,
-				})
-			}
-		}
-
-		// 4. Build expected GVR sets.
+		// 3. Build expected GVR sets.
 		requiredSet := sets.New[schema.GroupVersionResource]()
 		optionalSet := sets.New[schema.GroupVersionResource]()
 		for _, e := range required {
@@ -91,7 +77,7 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 			optionalSet.Insert(schema.GroupVersionResource{Group: e.Group, Version: e.Version, Resource: e.Resource})
 		}
 
-		// 5. Query the cluster's actual served APIs via discovery.
+		// 4. Query the cluster's actual served APIs via discovery.
 		actual, err := discoveredResources(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -105,7 +91,7 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 			framework.Logf("optional API absent (OK): %s", gvrString(gvr))
 		}
 
-		// 6. Bidirectional comparison.
+		// 5. Bidirectional comparison.
 		missing := requiredSet.Difference(actual).UnsortedList()
 		unexpected := actual.Difference(requiredSet.Union(optionalSet)).UnsortedList()
 
@@ -123,20 +109,6 @@ func clusterProfileName(topology configv1.TopologyMode) clusterProfile {
 		return clusterProfileHypershift
 	}
 	return clusterProfileSelfManagedHA
-}
-
-// collectEnabledGates returns the feature gate names currently enabled on the cluster.
-// It uses the first (most recent) FeatureGateDetails entry in Status.FeatureGates.
-func collectEnabledGates(fg *configv1.FeatureGate) []configv1.FeatureGateName {
-	if len(fg.Status.FeatureGates) == 0 {
-		return nil
-	}
-	details := fg.Status.FeatureGates[0]
-	gates := make([]configv1.FeatureGateName, 0, len(details.Enabled))
-	for _, attr := range details.Enabled {
-		gates = append(gates, attr.Name)
-	}
-	return gates
 }
 
 // discoveredResources queries the cluster's API discovery and returns all served top-level

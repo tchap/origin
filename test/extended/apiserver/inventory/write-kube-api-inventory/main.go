@@ -54,10 +54,11 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to format Go code: %w", err)
 	}
 
-	// Determine output file path
+	// Determine output file path - one file per Kubernetes version
 	// This command is at test/extended/apiserver/inventory/write-kube-api-inventory/
-	// Output should be at test/extended/apiserver/inventory/zz_generated_kubernetes.go
-	outputPath := filepath.Join("test", "extended", "apiserver", "inventory", "zz_generated_kubernetes.go")
+	// Output should be at test/extended/apiserver/inventory/zz_generated_kubernetes_1_XX.go
+	filename := fmt.Sprintf("zz_generated_kubernetes_1_%d.go", minor)
+	outputPath := filepath.Join("test", "extended", "apiserver", "inventory", filename)
 
 	if verify {
 		// Verify mode: check if the file matches

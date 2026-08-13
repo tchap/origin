@@ -2,8 +2,6 @@
 
 package inventory
 
-import utilversion "k8s.io/apimachinery/pkg/util/version"
-
 var kubeAPIs136 = []ServedAPIEntry{
 	{Group: "", Version: "v1", Resource: "bindings", Kind: "Binding", Scope: "Namespaced", Source: "core-kube"},
 	{Group: "", Version: "v1", Resource: "componentstatuses", Kind: "ComponentStatus", Scope: "Namespaced", Source: "core-kube"},
@@ -75,16 +73,6 @@ var kubeAPIs136 = []ServedAPIEntry{
 	{Group: "storage.k8s.io", Version: "v1", Resource: "volumeattributesclasses", Kind: "VolumeAttributesClass", Scope: "Namespaced", Source: "core-kube"},
 }
 
-// ForKubeVersion returns the Kubernetes API inventory for the given version.
-// Returns found=false if the version is not in the generated inventory.
-func ForKubeVersion(v *utilversion.Version) ([]ServedAPIEntry, bool) {
-	if v.Major() != 1 {
-		return nil, false
-	}
-	switch v.Minor() {
-	case 36:
-		return kubeAPIs136, true
-	default:
-		return nil, false
-	}
+func init() {
+	RegisterKubernetesAPIs(36, kubeAPIs136)
 }

@@ -149,12 +149,12 @@ func discoveredResources(oc *exutil.CLI) (sets.Set[schema.GroupVersionResource],
 	}
 
 	result := sets.New[schema.GroupVersionResource]()
-	for _, rl := range resourceLists {
-		gv, err := schema.ParseGroupVersion(rl.GroupVersion)
+	for _, resourceList := range resourceLists {
+		gv, err := schema.ParseGroupVersion(resourceList.GroupVersion)
 		if err != nil {
 			continue
 		}
-		for _, r := range rl.APIResources {
+		for _, r := range resourceList.APIResources {
 			if strings.Contains(r.Name, "/") {
 				continue // skip subresources
 			}

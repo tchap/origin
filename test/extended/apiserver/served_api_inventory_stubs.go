@@ -374,7 +374,7 @@ var kubeAPIOverridesByFeatureGate = map[string][]kubeAPIOverride{
 		{
 			GroupVersion:     "admissionregistration.k8s.io/v1beta1",
 			Kinds:            []string{"MutatingAdmissionPolicy", "MutatingAdmissionPolicyBinding"},
-			KubeVersionRange: semver.MustParseRange(">=1.34.0"),
+			KubeVersionRange: semver.MustParseRange(">=1.34.0 <1.37.0"),
 		},
 	},
 	"VolumeGroupSnapshot": {

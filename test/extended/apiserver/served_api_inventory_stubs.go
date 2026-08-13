@@ -4,6 +4,9 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/openshift/origin/test/extended/apiserver/inventory"
 )
 
@@ -430,12 +433,17 @@ func applyFeatureGateOverrides(baseAPIs []inventory.ServedAPIEntry, enabledGates
 
 			// Add each Kind from this override
 			for _, kind := range override.Kinds {
-				// Convert Kind to resource (simple pluralization)
-				resource := strings.ToLower(kind) + "s"
+				// Use proper pluralization via meta.UnsafeGuessKindToResource
+				gvk := schema.GroupVersionKind{
+					Group:   group,
+					Version: version,
+					Kind:    kind,
+				}
+				gvr, _ := meta.UnsafeGuessKindToResource(gvk)
 				result = append(result, servedAPIEntry{
-					Group:    group,
-					Version:  version,
-					Resource: resource,
+					Group:    gvr.Group,
+					Version:  gvr.Version,
+					Resource: gvr.Resource,
 				})
 			}
 		}

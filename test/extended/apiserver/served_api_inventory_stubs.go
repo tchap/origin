@@ -1,5 +1,12 @@
 package apiserver
 
+import (
+	"strings"
+
+	"github.com/blang/semver/v4"
+	"github.com/openshift/origin/test/extended/apiserver/inventory"
+)
+
 // Stubs for the openshift/api servedapis package.
 //
 // These stand in for the generated code that will live in openshift/api once that's implemented.
@@ -340,5 +347,99 @@ func openshiftOptionalAPIs() []servedAPIEntry {
 	for _, r := range optional {
 		result = append(result, servedAPIEntry{Group: r.group, Version: r.version, Resource: r.resource, })
 	}
+	return result
+}
+
+// Kubernetes API overrides - stub for openshift/api features.KubeAPIOverridesByFeatureGate
+
+type kubeAPIOverride struct {
+	GroupVersion     string
+	Kinds            []string
+	KubeVersionRange semver.Range // nil means all versions
+}
+
+// kubeAPIOverridesByFeatureGate maps OpenShift feature gate names to additional Kubernetes
+// APIs they enable beyond upstream DefaultAPIResourceConfigSource.
+// This is a stub - the real implementation will come from openshift/api features package.
+var kubeAPIOverridesByFeatureGate = map[string][]kubeAPIOverride{
+	"MutatingAdmissionPolicy": {
+		{
+			GroupVersion:     "admissionregistration.k8s.io/v1alpha1",
+			Kinds:            []string{"MutatingAdmissionPolicy", "MutatingAdmissionPolicyBinding"},
+			KubeVersionRange: semver.MustParseRange(">=1.33.0 <1.34.0"),
+		},
+		{
+			GroupVersion:     "admissionregistration.k8s.io/v1beta1",
+			Kinds:            []string{"MutatingAdmissionPolicy", "MutatingAdmissionPolicyBinding"},
+			KubeVersionRange: semver.MustParseRange(">=1.34.0"),
+		},
+	},
+	"VolumeGroupSnapshot": {
+		{
+			GroupVersion:     "groupsnapshot.storage.k8s.io/v1",
+			Kinds:            []string{"VolumeGroupSnapshot", "VolumeGroupSnapshotClass", "VolumeGroupSnapshotContent"},
+			KubeVersionRange: nil, // all versions
+		},
+	},
+}
+
+// applyFeatureGateOverrides adds Kubernetes APIs enabled by OpenShift feature gates
+// to the base inventory. This is a stub - will use openshift/api features package later.
+func applyFeatureGateOverrides(baseAPIs []inventory.ServedAPIEntry, enabledGates map[string]bool, kubeVersionStr string) []servedAPIEntry {
+	// Parse version for range matching
+	semVersion, err := semver.ParseTolerant(kubeVersionStr)
+	if err != nil {
+		// If parsing fails, just convert base APIs without overrides
+		return convertToStubFormat(baseAPIs)
+	}
+
+	result := make([]servedAPIEntry, 0, len(baseAPIs)+10)
+
+	// Convert base APIs
+	for _, e := range baseAPIs {
+		result = append(result, servedAPIEntry{
+			Group:    e.Group,
+			Version:  e.Version,
+			Resource: e.Resource,
+		})
+	}
+
+	// Add APIs for each enabled feature gate
+	for gateName, enabled := range enabledGates {
+		if !enabled {
+			continue
+		}
+
+		overrides, found := kubeAPIOverridesByFeatureGate[gateName]
+		if !found {
+			continue
+		}
+
+		for _, override := range overrides {
+			// Skip if version range doesn't match
+			if override.KubeVersionRange != nil && !override.KubeVersionRange(semVersion) {
+				continue
+			}
+
+			// Parse GroupVersion
+			parts := strings.SplitN(override.GroupVersion, "/", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			group, version := parts[0], parts[1]
+
+			// Add each Kind from this override
+			for _, kind := range override.Kinds {
+				// Convert Kind to resource (simple pluralization)
+				resource := strings.ToLower(kind) + "s"
+				result = append(result, servedAPIEntry{
+					Group:    group,
+					Version:  version,
+					Resource: resource,
+				})
+			}
+		}
+	}
+
 	return result
 }

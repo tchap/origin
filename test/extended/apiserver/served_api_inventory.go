@@ -75,8 +75,12 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 			e2eskipper.Skipf("Kubernetes API inventory for version %d.%d not found. This is expected during Kubernetes rebase. Run: make update-kube-api-inventory", kubeVersion.Major(), kubeVersion.Minor())
 		}
 
+		// Apply feature gate overrides to Kubernetes APIs based on cluster feature gates
+		enabledGates := getEnabledFeatureGates(featureGate)
+		kubeAPIsWithOverrides := applyFeatureGateOverrides(kubeAPIs, enabledGates, kubeVersion.String())
+
 		// Combine required lists
-		required := append(osRequired, convertToStubFormat(kubeAPIs)...)
+		required := append(osRequired, kubeAPIsWithOverrides...)
 		optional := osOptional
 
 		// 3. Build expected GVR sets.
@@ -201,4 +205,28 @@ func formatGVRList(gvrs []schema.GroupVersionResource) string {
 	}
 	sort.Strings(strs)
 	return strings.Join(strs, "\n")
+}
+
+// getEnabledFeatureGates extracts the map of enabled feature gates from the FeatureGate resource.
+// Returns a map where keys are gate names and values indicate if the gate is enabled.
+func getEnabledFeatureGates(fg *configv1.FeatureGate) map[string]bool {
+	enabledGates := make(map[string]bool)
+
+	if fg == nil || fg.Status.FeatureGates == nil {
+		return enabledGates
+	}
+
+	// Iterate through all version-specific feature gate details
+	for _, details := range fg.Status.FeatureGates {
+		// Mark all enabled gates
+		for _, gate := range details.Enabled {
+			enabledGates[string(gate.Name)] = true
+		}
+		// Mark all disabled gates
+		for _, gate := range details.Disabled {
+			enabledGates[string(gate.Name)] = false
+		}
+	}
+
+	return enabledGates
 }

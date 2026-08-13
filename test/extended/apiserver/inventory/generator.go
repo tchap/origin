@@ -60,7 +60,7 @@ func shouldSkipKind(kind string) bool {
 	return nonResourceKinds.Has(kind)
 }
 
-// GenerateKubernetesInventory derives the complete set of Kubernetes API resources
+// GenerateKubernetesInventory derives the base set of Kubernetes API resources
 // from the vendored scheme and DefaultAPIResourceConfigSource.
 func GenerateKubernetesInventory() ([]ServedAPIEntry, error) {
 	resourceConfig := controlplane.DefaultAPIResourceConfigSource()

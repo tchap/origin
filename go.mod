@@ -472,3 +472,6 @@ replace (
 	k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20260719124805-0f7d1a1b66af
 	k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20260719124805-0f7d1a1b66af
 )
+
+// branch: served-api-inventory
+replace github.com/openshift/api => github.com/tchap/api v0.0.0-20260814101148-51d81e0ea210

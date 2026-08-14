@@ -1594,7 +1594,7 @@ github.com/openshift-kni/commatrix/pkg/matrix-diff
 github.com/openshift-kni/commatrix/pkg/mcp
 github.com/openshift-kni/commatrix/pkg/types
 github.com/openshift-kni/commatrix/pkg/utils
-# github.com/openshift/api v0.0.0-20260715165912-72066cc9718b
+# github.com/openshift/api v0.0.0-20260715165912-72066cc9718b => github.com/tchap/api v0.0.0-20260814101148-51d81e0ea210
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -5282,3 +5282,4 @@ sigs.k8s.io/yaml/kyaml
 # k8s.io/sample-apiserver => github.com/openshift/kubernetes/staging/src/k8s.io/sample-apiserver v0.0.0-20260719124805-0f7d1a1b66af
 # k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20260719124805-0f7d1a1b66af
 # k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20260719124805-0f7d1a1b66af
+# github.com/openshift/api => github.com/tchap/api v0.0.0-20260814101148-51d81e0ea210

@@ -26,6 +26,7 @@ import (
 	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/servedapis"
 
 	"github.com/openshift/origin/test/extended/apiserver/inventory"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -63,8 +64,8 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 			profile, featureGate.Spec.FeatureSet, kubeVersion)
 
 		// 2. Build the expected API set.
-		// Get OpenShift APIs from stub (will be from vendored openshift/api later)
-		osRequired, osOptional, osFound := forProfile(profile)
+		// Get OpenShift APIs from vendored openshift/api
+		osRequired, osOptional, osFound := servedapis.ForProfile(profile)
 		if !osFound {
 			e2eskipper.Skipf("OpenShift API inventory for profile=%s not found.", profile)
 		}
@@ -79,9 +80,13 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 		enabledGates := getEnabledFeatureGates(featureGate)
 		kubeAPIsWithOverrides := applyFeatureGateOverrides(kubeAPIs, enabledGates, kubeVersion.String())
 
+		// Convert to common format for combining
+		osRequiredConverted := convertFromServedAPIs(osRequired)
+		osOptionalConverted := convertFromServedAPIs(osOptional)
+
 		// Combine required lists
-		required := append(osRequired, kubeAPIsWithOverrides...)
-		optional := osOptional
+		required := append(osRequiredConverted, kubeAPIsWithOverrides...)
+		optional := osOptionalConverted
 
 		// 3. Build expected GVR sets.
 		requiredSet := sets.New[schema.GroupVersionResource]()
@@ -118,18 +123,16 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 	})
 })
 
-// clusterProfileName maps the infrastructure topology to the ClusterProfile used by the
-// servedapis package (stub: clusterProfile; vendored: servedapis.ClusterProfile).
-func clusterProfileName(topology configv1.TopologyMode) clusterProfile {
+// clusterProfileName maps the infrastructure topology to the ClusterProfile from servedapis.
+func clusterProfileName(topology configv1.TopologyMode) servedapis.ClusterProfile {
 	if topology == configv1.ExternalTopologyMode {
-		return clusterProfileHypershift
+		return servedapis.ClusterProfileHyperShift
 	}
-	return clusterProfileSelfManagedHA
+	return servedapis.ClusterProfileSelfManagedHA
 }
 
-// convertToStubFormat converts inventory.ServedAPIEntry to the stub format.
-// This will be removed when we vendor openshift/api and use the same types everywhere.
-func convertToStubFormat(entries []inventory.ServedAPIEntry) []servedAPIEntry {
+// convertFromServedAPIs converts servedapis.ServedAPIEntry to local servedAPIEntry format.
+func convertFromServedAPIs(entries []servedapis.ServedAPIEntry) []servedAPIEntry {
 	result := make([]servedAPIEntry, 0, len(entries))
 	for _, e := range entries {
 		result = append(result, servedAPIEntry{

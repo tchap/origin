@@ -474,4 +474,4 @@ replace (
 )
 
 // branch: served-api-inventory
-replace github.com/openshift/api => github.com/tchap/api v0.0.0-20260814103140-5067ade6eab3
+replace github.com/openshift/api => github.com/tchap/api v0.0.0-20260814111922-1a602e7280a9

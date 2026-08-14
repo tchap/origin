@@ -43,8 +43,8 @@ var (
 	// (apiextensions-apiserver, kube-aggregator) that are not discoverable via
 	// DefaultAPIResourceConfigSource and the client-go scheme.
 	extraKubernetesAPIs = []ServedAPIEntry{
-		{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions", Kind: "CustomResourceDefinition"},
-		{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices", Kind: "APIService"},
+		{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions", Kind: "CustomResourceDefinition", Scope: "Cluster", Source: "core-kube"},
+		{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices", Kind: "APIService", Scope: "Cluster", Source: "core-kube"},
 	}
 )
 
@@ -81,6 +81,8 @@ func GenerateKubernetesInventory() ([]ServedAPIEntry, error) {
 				Version:  plural.Version,
 				Resource: plural.Resource,
 				Kind:     kind,
+				Scope:    "Namespaced", // Default, will be overridden for cluster-scoped
+				Source:   "core-kube",
 			})
 		}
 	}
@@ -117,8 +119,8 @@ func FormatGoCode(entries []ServedAPIEntry, kubeMinorVersion int) (string, error
 	// Generate the variable for this Kubernetes version
 	fmt.Fprintf(&b, "var kubeAPIs1%d = []ServedAPIEntry{\n", kubeMinorVersion)
 	for _, e := range entries {
-		fmt.Fprintf(&b, "\t{Group: %q, Version: %q, Resource: %q, Kind: %q},\n",
-			e.Group, e.Version, e.Resource, e.Kind)
+		fmt.Fprintf(&b, "\t{Group: %q, Version: %q, Resource: %q, Kind: %q, Scope: %q, Source: %q},\n",
+			e.Group, e.Version, e.Resource, e.Kind, e.Scope, e.Source)
 	}
 	fmt.Fprintf(&b, "}\n")
 

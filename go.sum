@@ -1081,8 +1081,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/subosito/gotenv v1.2.0 h1:Slr1R9HxAlEKefgq5jn9U+DnETlIUa6HfgEzj0g5d7s=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
-github.com/tchap/api v0.0.0-20260814103140-5067ade6eab3 h1:muz0e+bQdb3Bzls/cl4AQJgLiNbEANNKCXp7OjhR1eM=
-github.com/tchap/api v0.0.0-20260814103140-5067ade6eab3/go.mod h1:k6qH5QOVa5GDln2VVm8Jz4NV3Z7R2SATHFLwGS6Wh3M=
+github.com/tchap/api v0.0.0-20260814111922-1a602e7280a9 h1:zJTdKG3Adek/Zu/aMSuToj6TBjuYHVe2VZz4QS9AjsM=
+github.com/tchap/api v0.0.0-20260814111922-1a602e7280a9/go.mod h1:k6qH5QOVa5GDln2VVm8Jz4NV3Z7R2SATHFLwGS6Wh3M=
 github.com/tecbiz-ch/nutanix-go-sdk v0.1.15 h1:ZT5I6OFGswvMceujUE10ZXPNnT5UQIW9gAX4FEFK6Ds=
 github.com/tecbiz-ch/nutanix-go-sdk v0.1.15/go.mod h1:wpqz3KCR/I3t/IGzZiFOy6ZRcz1IcR0hzAVbj0UJ388=
 github.com/tidwall/gjson v1.14.2/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=

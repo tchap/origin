@@ -1,17 +1,12 @@
 package inventory
 
-// ClusterProfile represents the cluster deployment topology.
-type ClusterProfile string
+import "github.com/openshift/api/servedapis"
+
+// Re-export types from servedapis for convenience
+type ServedAPIEntry = servedapis.ServedAPIEntry
+type ClusterProfile = servedapis.ClusterProfile
 
 const (
-	ClusterProfileSelfManagedHA ClusterProfile = "SelfManagedHA"
-	ClusterProfileHypershift    ClusterProfile = "Hypershift"
+	ClusterProfileSelfManagedHA = servedapis.ClusterProfileSelfManagedHA
+	ClusterProfileHyperShift    = servedapis.ClusterProfileHyperShift
 )
-
-// ServedAPIEntry describes a single API resource that should be served by the cluster.
-type ServedAPIEntry struct {
-	Group    string
-	Version  string
-	Resource string
-	Kind     string
-}

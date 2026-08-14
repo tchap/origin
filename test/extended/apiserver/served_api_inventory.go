@@ -25,8 +25,10 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 
+	"github.com/blang/semver/v4"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/servedapis"
+	"k8s.io/apimachinery/pkg/api/meta"
 
 	"github.com/openshift/origin/test/extended/apiserver/inventory"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -80,13 +82,9 @@ var _ = g.Describe("[sig-api-machinery][Suite:openshift/conformance/parallel] Se
 		enabledGates := getEnabledFeatureGates(featureGate)
 		kubeAPIsWithOverrides := applyFeatureGateOverrides(kubeAPIs, enabledGates, kubeVersion.String())
 
-		// Convert to common format for combining
-		osRequiredConverted := convertFromServedAPIs(osRequired)
-		osOptionalConverted := convertFromServedAPIs(osOptional)
-
 		// Combine required lists
-		required := append(osRequiredConverted, kubeAPIsWithOverrides...)
-		optional := osOptionalConverted
+		required := append(osRequired, kubeAPIsWithOverrides...)
+		optional := osOptional
 
 		// 3. Build expected GVR sets.
 		requiredSet := sets.New[schema.GroupVersionResource]()
@@ -131,18 +129,6 @@ func clusterProfileName(topology configv1.TopologyMode) servedapis.ClusterProfil
 	return servedapis.ClusterProfileSelfManagedHA
 }
 
-// convertFromServedAPIs converts servedapis.ServedAPIEntry to local servedAPIEntry format.
-func convertFromServedAPIs(entries []servedapis.ServedAPIEntry) []servedAPIEntry {
-	result := make([]servedAPIEntry, 0, len(entries))
-	for _, e := range entries {
-		result = append(result, servedAPIEntry{
-			Group:    e.Group,
-			Version:  e.Version,
-			Resource: e.Resource,
-		})
-	}
-	return result
-}
 
 // discoveredResources queries the cluster's API discovery and returns all served top-level
 // resources (subresources containing "/" are excluded). Retries on partial failures.
@@ -233,3 +219,70 @@ func getEnabledFeatureGates(fg *configv1.FeatureGate) map[string]bool {
 
 	return enabledGates
 }
+
+// applyFeatureGateOverrides adds Kubernetes APIs enabled by OpenShift feature gates
+// to the base inventory.
+func applyFeatureGateOverrides(baseAPIs []servedapis.ServedAPIEntry, enabledGates map[string]bool, kubeVersionStr string) []servedapis.ServedAPIEntry {
+	// Parse version for range matching
+	semVersion, err := semver.ParseTolerant(kubeVersionStr)
+	if err != nil {
+		// If parsing fails, just return base APIs without overrides
+		return baseAPIs
+	}
+
+	result := make([]servedapis.ServedAPIEntry, 0, len(baseAPIs)+10)
+
+	// Add base APIs
+	result = append(result, baseAPIs...)
+
+	// Get feature gate overrides from openshift/api
+	overridesByGate := servedapis.KubeAPIOverridesByFeatureGate()
+
+	// Add APIs for each enabled feature gate
+	for gateName, enabled := range enabledGates {
+		if !enabled {
+			continue
+		}
+
+		overrides, found := overridesByGate[gateName]
+		if !found {
+			continue
+		}
+
+		for _, override := range overrides {
+			// Skip if version range doesn't match
+			if override.KubeVersionRange != nil && !override.KubeVersionRange(semVersion) {
+				continue
+			}
+
+			// Parse GroupVersion
+			parts := strings.SplitN(override.GroupVersion, "/", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			group, version := parts[0], parts[1]
+
+			// Add each Kind from this override
+			for _, kind := range override.Kinds {
+				// Use proper pluralization via meta.UnsafeGuessKindToResource
+				gvk := schema.GroupVersionKind{
+					Group:   group,
+					Version: version,
+					Kind:    kind,
+				}
+				gvr, _ := meta.UnsafeGuessKindToResource(gvk)
+				result = append(result, servedapis.ServedAPIEntry{
+					Group:    gvr.Group,
+					Version:  gvr.Version,
+					Resource: gvr.Resource,
+					Kind:     kind,
+					Scope:    "", // Will be ignored in comparison
+					Source:   "", // Will be ignored in comparison
+				})
+			}
+		}
+	}
+
+	return result
+}
+

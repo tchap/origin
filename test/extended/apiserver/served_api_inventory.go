@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver/v4"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -25,10 +27,8 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 
-	"github.com/blang/semver/v4"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/servedapis"
-	"k8s.io/apimachinery/pkg/api/meta"
 
 	"github.com/openshift/origin/test/extended/apiserver/inventory"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -128,7 +128,6 @@ func clusterProfileName(topology configv1.TopologyMode) servedapis.ClusterProfil
 	}
 	return servedapis.ClusterProfileSelfManagedHA
 }
-
 
 // discoveredResources queries the cluster's API discovery and returns all served top-level
 // resources (subresources containing "/" are excluded). Retries on partial failures.
@@ -285,4 +284,3 @@ func applyFeatureGateOverrides(baseAPIs []servedapis.ServedAPIEntry, enabledGate
 
 	return result
 }
-
